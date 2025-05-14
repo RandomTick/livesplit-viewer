@@ -19,7 +19,7 @@
 1. Open LiveSplit on your PC
 2. Right-click → Control → Start Server
 3. Find your PC's IP address (`ipconfig` in Command Prompt)
-4. Visit [this viewer's page](https://yourusername.github.io/livesplit-viewer/)
+4. Visit [this viewer's page](https://randomtick.github.io/livesplit-viewer/)
 5. Enter your IP and port (default: `192.168.1.100:16835`)
 6. Click Connect and enjoy!
 
