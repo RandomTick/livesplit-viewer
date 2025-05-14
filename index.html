@@ -89,11 +89,28 @@
         #connection-form button:hover {
             background-color: #2a4764;
         }
+		#split-table{
+			width:100%;
+			border-collapse:collapse;
+			table-layout:fixed;          /* equal column widths */
+		}
+		#split-table th,
+		#split-table td{
+			padding:4px 6px;
+		}
+
+		/* right‑align everything except the first (name) column */
+		#split-table th:nth-child(2),
+		#split-table th:nth-child(3),
+		#split-table td:nth-child(2),
+		#split-table td:nth-child(3){
+			text-align:right;
+		}
     </style>
 </head>
 <body>
     <div id="connection-form">
-        <input type="text" id="server-address" placeholder="Server address (e.g., 192.168.1.100:16835)" value="localhost:16835">
+        <input type="text" id="server-address" placeholder="Server address (eg., 192.168.1.100:16834)" value="localhost:16834">
         <button id="connect-button">Connect</button>
     </div>
 
@@ -103,225 +120,135 @@
     
     <div id="split-info">Current Split: --</div>
     
-    <div id="splits-container">
-        <!-- Splits will be added here dynamically -->
+    <table id="split-table" style="width:100%;border-collapse:collapse;margin-top:10px"></table>
+	<div style="margin-top:10px;font-size:20px">
+		Best&nbsp;Possible&nbsp;Time:&nbsp;<span id="best-time">--</span>
+	</div>
+    
     </div>
 
-    <script>
-        let socket = null;
-        let splitNames = [];
-        let splitTimes = [];
-        let currentSplitIndex = -1;
-        let attempt = 0;
-        
-        // Add instructions when page loads
-        window.addEventListener('load', function() {
-            const container = document.getElementById('splits-container');
-            container.innerHTML = `
-                <div style="background-color: #375a7f; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
-                    <h3 style="margin-top: 0;">How to connect:</h3>
-                    <ol style="padding-left: 20px;">
-                        <li>On your PC, open LiveSplit</li>
-                        <li>Right-click → Control → Start Server</li>
-                        <li>Find your PC's IP address (open Command Prompt and type "ipconfig")</li>
-                        <li>Enter your PC's IP and port (default: 16835) above</li>
-                        <li>Click Connect</li>
-                    </ol>
-                    <p><strong>Note:</strong> Your phone/device must be on the same network as your PC</p>
-                </div>
-            `;
-        });
-        
-        document.getElementById('connect-button').addEventListener('click', connectToServer);
-        
-        function connectToServer() {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.close();
-                return;
-            }
-            
-            const serverAddress = document.getElementById('server-address').value;
-            if (!serverAddress) {
-                alert('Please enter a server address');
-                return;
-            }
-            
-            const statusElement = document.getElementById('connection-status');
-            statusElement.className = 'connecting';
-            statusElement.textContent = 'Connecting...';
-            
-            try {
-                // Handle GitHub Pages HTTPS to WS connection
-                let wsProtocol = 'ws://';
-                if (window.location.protocol === 'https:') {
-                    // Show warning about mixed content
-                    alert('Warning: You are connecting from an HTTPS site to a WebSocket (ws://) server. Your browser may block this connection. If you have problems connecting, please try using http:// instead of https:// in the address bar, or check your browser settings for "mixed content".');
-                }
-                
-                socket = new WebSocket(`${wsProtocol}${serverAddress}`);
-                
-                socket.onopen = function() {
-                    statusElement.className = 'connected';
-                    statusElement.textContent = 'Connected';
-                    document.getElementById('connect-button').textContent = 'Disconnect';
-                    
-                    // Get initial data
-                    sendCommand('getsplitindex');
-                    sendCommand('getcurrentsplitname');
-                    sendCommand('getdelta');
-                    sendCommand('getsplitnames');
-                    
-                    // Start regular updates
-                    startUpdates();
-                };
-                
-                socket.onclose = function() {
-                    statusElement.className = 'disconnected';
-                    statusElement.textContent = 'Disconnected';
-                    document.getElementById('connect-button').textContent = 'Connect';
-                    stopUpdates();
-                };
-                
-                socket.onerror = function() {
-                    statusElement.className = 'disconnected';
-                    statusElement.textContent = 'Connection Error';
-                    document.getElementById('connect-button').textContent = 'Connect';
-                    alert('Failed to connect to the server. Make sure LiveSplit server is running and the address is correct.');
-                };
-                
-                socket.onmessage = function(event) {
-                    handleMessage(event.data);
-                };
-            } catch (error) {
-                console.error('Connection error:', error);
-                statusElement.className = 'disconnected';
-                statusElement.textContent = 'Connection Error';
-                alert('Failed to connect to the server: ' + error.message);
-            }
-        }
-        
-        let updateInterval = null;
-        
-        function startUpdates() {
-            updateInterval = setInterval(function() {
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    sendCommand('gettime');
-                    sendCommand('getsplitindex');
-                    sendCommand('getdelta');
-                    
-                    // Only ask for best possible time if the run is active
-                    if (currentSplitIndex >= 0) {
-                        sendCommand('getbestpossibletime');
-                    }
-                }
-            }, 100); // Update every 100ms for smooth timer
-        }
-        
-        function stopUpdates() {
-            if (updateInterval) {
-                clearInterval(updateInterval);
-                updateInterval = null;
-            }
-        }
-        
-        function sendCommand(command) {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(command);
-            }
-        }
-        
-        function handleMessage(data) {
-            // Parse the response
-            const response = data.trim();
-            
-            if (response === 'Command not recognized') {
-                console.error('Command not recognized by LiveSplit server');
-                return;
-            }
-            
-            // Handle different types of responses based on the last command sent
-            if (response.startsWith('[')) {
-                // This is likely a response to getsplitnames
-                try {
-                    splitNames = JSON.parse(response);
-                    updateSplitsDisplay();
-                } catch (e) {
-                    console.error('Failed to parse split names:', e);
-                }
-            } else if (response.includes(':') && response.includes('.')) {
-                // This is likely a time response (for gettime or similar)
-                document.getElementById('timer').textContent = response;
-            } else if (!isNaN(parseInt(response))) {
-                // This is likely a numeric response (e.g., getsplitindex)
-                const prevSplitIndex = currentSplitIndex;
-                currentSplitIndex = parseInt(response);
-                
-                if (prevSplitIndex !== currentSplitIndex) {
-                    sendCommand('getcurrentsplitname');
-                    updateSplitsDisplay();
-                }
-            } else if (response.startsWith('-') || response.startsWith('+')) {
-                // This is likely a delta response
-                const deltaElement = document.getElementById('delta');
-                if (deltaElement) {
-                    deltaElement.textContent = response;
-                    if (response.startsWith('-')) {
-                        deltaElement.className = 'ahead';
-                    } else {
-                        deltaElement.className = 'behind';
-                    }
-                }
-            } else {
-                // This could be a response to getcurrentsplitname
-                document.getElementById('split-info').textContent = `Current Split: ${response}`;
-            }
-        }
-        
-        function updateSplitsDisplay() {
-            const container = document.getElementById('splits-container');
-            container.innerHTML = '';
-            
-            if (!splitNames || splitNames.length === 0) {
-                return;
-            }
-            
-            for (let i = 0; i < splitNames.length; i++) {
-                const splitElement = document.createElement('div');
-                splitElement.className = 'split';
-                
-                if (i === currentSplitIndex) {
-                    splitElement.classList.add('current-split');
-                } else if (i < currentSplitIndex) {
-                    splitElement.classList.add('completed-split');
-                }
-                
-                const nameElement = document.createElement('div');
-                nameElement.className = 'split-name';
-                nameElement.textContent = splitNames[i];
-                
-                const timeElement = document.createElement('div');
-                timeElement.className = 'split-time';
-                timeElement.textContent = splitTimes[i] || '--';
-                
-                if (i === currentSplitIndex) {
-                    const deltaElement = document.createElement('div');
-                    deltaElement.id = 'delta';
-                    deltaElement.textContent = '--';
-                    splitElement.appendChild(nameElement);
-                    splitElement.appendChild(deltaElement);
-                    splitElement.appendChild(timeElement);
-                } else {
-                    splitElement.appendChild(nameElement);
-                    splitElement.appendChild(timeElement);
-                }
-                
-                container.appendChild(splitElement);
-            }
-        }
-        
-        // Initialize with disconnected state
-        document.getElementById('connection-status').className = 'disconnected';
-        document.getElementById('connection-status').textContent = 'Disconnected';
-    </script>
+	<script>
+		/* ───── configuration ───── */
+		const POLL_DELAY = 250;               // ms between requests
+		const DECIMALS   = 2;                 // .xx precision
+
+		/* ───── state ───── */
+		let socket=null, currSplit=-1, lastDelta='--';
+		let waiting=null, cyclePos=0;
+		const CYCLE = ['getcurrenttime','getdelta','getbestpossibletime','getsplitindex'];
+		const q=[];
+
+		/* ───── helpers ───── */
+		const $ = id => document.getElementById(id);
+		const colour  = txt => txt.startsWith('-') ? '#5cb85c' : '#d9534f';
+		const round   = t => t.replace(/\.(\d{0,2})\d*$/, (_,d)=>'.'+d.padEnd(DECIMALS,'0'));
+		const trim0   = t => {                       // recursively strip 0: pairs
+			const sign = t[0]=='-'||t[0]=='+'? t[0] : '';
+			t = sign ? t.slice(1) : t;
+			while (/^00:/.test(t)) t = t.slice(3);    // drop first “00:”
+			return sign + t;
+		};
+		function setStatus(txt,cls){const e=$('connection-status');e.textContent=txt;e.className=cls;}
+
+		/* ───── connect ───── */
+		$('connect-button').addEventListener('click',()=>{
+		  if (socket?.readyState===WebSocket.OPEN) return socket.close();
+
+		  let raw=$('server-address').value.trim();
+		  if(!raw) return alert('Enter IP:16835/livesplit');
+		  let url=/^wss?:\/\//i.test(raw)?raw:'ws://'+raw;
+		  if(!/\/livesplit$/i.test(url)) url+='/livesplit';
+
+		  setStatus('Connecting…','connecting');
+		  socket=new WebSocket(url);
+		  socket.onopen = bootstrap;
+		  socket.onclose=()=>setStatus('Disconnected','disconnected');
+		  socket.onerror=()=>setStatus('Connection Error','disconnected');
+		  socket.onmessage=e=>{
+			 handle(waiting,e.data.trim());
+			 waiting=null;
+			 setTimeout(ask,POLL_DELAY);
+		  };
+		});
+
+		function bootstrap(){
+		  setStatus('Connected','connected');
+		  $('connect-button').textContent='Disconnect';
+		  ['getsplitindex','getcurrentsplitname','getdelta','getcurrenttime','getbestpossibletime']
+			.forEach(cmd=>q.push(cmd));
+		  ask();
+		}
+
+		/* ───── polling ───── */
+		function ask(){
+		  if(waiting || socket?.readyState!==WebSocket.OPEN) return;
+		  const cmd = q.length ? q.shift() : CYCLE[cyclePos++ % CYCLE.length];
+		  waiting = cmd;
+		  socket.send(cmd);
+		}
+
+
+		function withSign(t){
+			if (t.startsWith('-') || t.startsWith('+')) return t;   // already signed
+			return /^0[:.]/.test(t) ? t : '+'+t;                    // leave 0 as “0.00”
+		}
+		/* ───── router ───── */
+		function handle(cmd, txt){
+		  switch(cmd){
+			case 'getcurrenttime':
+			  if(trim0(round(txt)) == "00"){
+				$('timer').textContent = "--";
+			  }else{
+				$('timer').textContent = trim0(round(txt));
+			  }
+			  
+			  
+			  break;
+
+			case 'getdelta':
+			  lastDelta = withSign(trim0(round(txt)));
+			  $('prev-delta').style.color = colour(lastDelta);
+			  $('prev-delta').textContent = lastDelta;
+			break;
+
+			case 'getsplitindex': {
+			  const prev = currSplit;  currSplit = +txt;
+			  if(prev!==-1 && currSplit!==prev){          // we *left* a split
+				 $('prev-name').textContent  = $('curr-name').textContent;
+				 $('prev-time').textContent  = $('timer').textContent;
+				 $('curr-delta').textContent = '';        // keep current delta empty
+				 $('curr-time').textContent  = '';		  // keep current timer empty
+			  }
+			  if(prev!==currSplit) q.push('getcurrentsplitname');
+			  break;
+			}
+
+			case 'getcurrentsplitname':
+			  $('curr-name').textContent = txt;
+			  break;
+
+			case 'getbestpossibletime':
+			  $('best-time').textContent = trim0(round(txt));
+			  break;
+
+			default: console.debug('reply',cmd,'→',txt);
+		  }
+		}
+
+		/* ───── build mini‑table once ───── */
+		window.addEventListener('load',()=>{
+		 $('split-table').innerHTML=`
+		   <thead><tr><th>Split</th><th>Δ</th><th>Time</th></tr></thead>
+		   <tbody>
+			 <tr><td id="prev-name">--</td><td id="prev-delta">--</td><td id="prev-time">--</td></tr>
+			 <tr><td id="curr-name">--</td><td id="curr-delta"></td><td id="curr-time"></td></tr>
+		   </tbody>`;
+		 setStatus('Disconnected','disconnected');
+		});
+	</script>
+
+
+
+
 </body>
 </html>
