@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveSplit Remote Viewer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #222;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        #connection-status {
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .connected {
+            background-color: #1e7e34;
+        }
+        .disconnected {
+            background-color: #bd2130;
+        }
+        .connecting {
+            background-color: #d39e00;
+        }
+        #timer {
+            font-size: 48px;
+            text-align: center;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 20px 0;
+        }
+        #split-info {
+            font-size: 24px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        #splits-container {
+            margin-top: 20px;
+        }
+        .split {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 10px;
+            margin-bottom: 5px;
+            background-color: #333;
+            border-radius: 5px;
+        }
+        .split-name {
+            font-weight: bold;
+        }
+        .current-split {
+            background-color: #375a7f;
+        }
+        .completed-split {
+            color: #aaa;
+        }
+        .ahead {
+            color: #5cb85c;
+        }
+        .behind {
+            color: #d9534f;
+        }
+        #connection-form {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        #connection-form input {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: none;
+        }
+        #connection-form button {
+            padding: 10px;
+            background-color: #375a7f;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #connection-form button:hover {
+            background-color: #2a4764;
+        }
+    </style>
+</head>
+<body>
+    <div id="connection-form">
+        <input type="text" id="server-address" placeholder="Server address (e.g., 192.168.1.100:16835)" value="localhost:16835">
+        <button id="connect-button">Connect</button>
+    </div>
+
+    <div id="connection-status" class="disconnected">Disconnected</div>
+    
+    <div id="timer">0:00:00.000</div>
+    
+    <div id="split-info">Current Split: --</div>
+    
+    <div id="splits-container">
+        <!-- Splits will be added here dynamically -->
+    </div>
+
+    <script>
+        let socket = null;
+        let splitNames = [];
+        let splitTimes = [];
+        let currentSplitIndex = -1;
+        let attempt = 0;
+        
+        // Add instructions when page loads
+        window.addEventListener('load', function() {
+            const container = document.getElementById('splits-container');
+            container.innerHTML = `
+                <div style="background-color: #375a7f; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">How to connect:</h3>
+                    <ol style="padding-left: 20px;">
+                        <li>On your PC, open LiveSplit</li>
+                        <li>Right-click → Control → Start Server</li>
+                        <li>Find your PC's IP address (open Command Prompt and type "ipconfig")</li>
+                        <li>Enter your PC's IP and port (default: 16835) above</li>
+                        <li>Click Connect</li>
+                    </ol>
+                    <p><strong>Note:</strong> Your phone/device must be on the same network as your PC</p>
+                </div>
+            `;
+        });
+        
+        document.getElementById('connect-button').addEventListener('click', connectToServer);
+        
+        function connectToServer() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.close();
+                return;
+            }
+            
+            const serverAddress = document.getElementById('server-address').value;
+            if (!serverAddress) {
+                alert('Please enter a server address');
+                return;
+            }
+            
+            const statusElement = document.getElementById('connection-status');
+            statusElement.className = 'connecting';
+            statusElement.textContent = 'Connecting...';
+            
+            try {
+                // Handle GitHub Pages HTTPS to WS connection
+                let wsProtocol = 'ws://';
+                if (window.location.protocol === 'https:') {
+                    // Show warning about mixed content
+                    alert('Warning: You are connecting from an HTTPS site to a WebSocket (ws://) server. Your browser may block this connection. If you have problems connecting, please try using http:// instead of https:// in the address bar, or check your browser settings for "mixed content".');
+                }
+                
+                socket = new WebSocket(`${wsProtocol}${serverAddress}`);
+                
+                socket.onopen = function() {
+                    statusElement.className = 'connected';
+                    statusElement.textContent = 'Connected';
+                    document.getElementById('connect-button').textContent = 'Disconnect';
+                    
+                    // Get initial data
+                    sendCommand('getsplitindex');
+                    sendCommand('getcurrentsplitname');
+                    sendCommand('getdelta');
+                    sendCommand('getsplitnames');
+                    
+                    // Start regular updates
+                    startUpdates();
+                };
+                
+                socket.onclose = function() {
+                    statusElement.className = 'disconnected';
+                    statusElement.textContent = 'Disconnected';
+                    document.getElementById('connect-button').textContent = 'Connect';
+                    stopUpdates();
+                };
+                
+                socket.onerror = function() {
+                    statusElement.className = 'disconnected';
+                    statusElement.textContent = 'Connection Error';
+                    document.getElementById('connect-button').textContent = 'Connect';
+                    alert('Failed to connect to the server. Make sure LiveSplit server is running and the address is correct.');
+                };
+                
+                socket.onmessage = function(event) {
+                    handleMessage(event.data);
+                };
+            } catch (error) {
+                console.error('Connection error:', error);
+                statusElement.className = 'disconnected';
+                statusElement.textContent = 'Connection Error';
+                alert('Failed to connect to the server: ' + error.message);
+            }
+        }
+        
+        let updateInterval = null;
+        
+        function startUpdates() {
+            updateInterval = setInterval(function() {
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    sendCommand('gettime');
+                    sendCommand('getsplitindex');
+                    sendCommand('getdelta');
+                    
+                    // Only ask for best possible time if the run is active
+                    if (currentSplitIndex >= 0) {
+                        sendCommand('getbestpossibletime');
+                    }
+                }
+            }, 100); // Update every 100ms for smooth timer
+        }
+        
+        function stopUpdates() {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+                updateInterval = null;
+            }
+        }
+        
+        function sendCommand(command) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(command);
+            }
+        }
+        
+        function handleMessage(data) {
+            // Parse the response
+            const response = data.trim();
+            
+            if (response === 'Command not recognized') {
+                console.error('Command not recognized by LiveSplit server');
+                return;
+            }
+            
+            // Handle different types of responses based on the last command sent
+            if (response.startsWith('[')) {
+                // This is likely a response to getsplitnames
+                try {
+                    splitNames = JSON.parse(response);
+                    updateSplitsDisplay();
+                } catch (e) {
+                    console.error('Failed to parse split names:', e);
+                }
+            } else if (response.includes(':') && response.includes('.')) {
+                // This is likely a time response (for gettime or similar)
+                document.getElementById('timer').textContent = response;
+            } else if (!isNaN(parseInt(response))) {
+                // This is likely a numeric response (e.g., getsplitindex)
+                const prevSplitIndex = currentSplitIndex;
+                currentSplitIndex = parseInt(response);
+                
+                if (prevSplitIndex !== currentSplitIndex) {
+                    sendCommand('getcurrentsplitname');
+                    updateSplitsDisplay();
+                }
+            } else if (response.startsWith('-') || response.startsWith('+')) {
+                // This is likely a delta response
+                const deltaElement = document.getElementById('delta');
+                if (deltaElement) {
+                    deltaElement.textContent = response;
+                    if (response.startsWith('-')) {
+                        deltaElement.className = 'ahead';
+                    } else {
+                        deltaElement.className = 'behind';
+                    }
+                }
+            } else {
+                // This could be a response to getcurrentsplitname
+                document.getElementById('split-info').textContent = `Current Split: ${response}`;
+            }
+        }
+        
+        function updateSplitsDisplay() {
+            const container = document.getElementById('splits-container');
+            container.innerHTML = '';
+            
+            if (!splitNames || splitNames.length === 0) {
+                return;
+            }
+            
+            for (let i = 0; i < splitNames.length; i++) {
+                const splitElement = document.createElement('div');
+                splitElement.className = 'split';
+                
+                if (i === currentSplitIndex) {
+                    splitElement.classList.add('current-split');
+                } else if (i < currentSplitIndex) {
+                    splitElement.classList.add('completed-split');
+                }
+                
+                const nameElement = document.createElement('div');
+                nameElement.className = 'split-name';
+                nameElement.textContent = splitNames[i];
+                
+                const timeElement = document.createElement('div');
+                timeElement.className = 'split-time';
+                timeElement.textContent = splitTimes[i] || '--';
+                
+                if (i === currentSplitIndex) {
+                    const deltaElement = document.createElement('div');
+                    deltaElement.id = 'delta';
+                    deltaElement.textContent = '--';
+                    splitElement.appendChild(nameElement);
+                    splitElement.appendChild(deltaElement);
+                    splitElement.appendChild(timeElement);
+                } else {
+                    splitElement.appendChild(nameElement);
+                    splitElement.appendChild(timeElement);
+                }
+                
+                container.appendChild(splitElement);
+            }
+        }
+        
+        // Initialize with disconnected state
+        document.getElementById('connection-status').className = 'disconnected';
+        document.getElementById('connection-status').textContent = 'Disconnected';
+    </script>
+</body>
+</html>
