@@ -1,49 +1,81 @@
 # 🏃‍♀️ LiveSplit Remote Viewer 🏃‍♂️
 
-> A lightweight, mobile-friendly web viewer for LiveSplit speedrun timers
+> A lightweight, mobile‑friendly web viewer for LiveSplit speedrun timers
 
 ![LiveSplit Viewer Screenshot](https://raw.githubusercontent.com/RandomTick/livesplit-viewer/refs/heads/main/assets/screenshot.png)
 
 ## ✨ Features
 
-- 📱 View your LiveSplit timer on any device with a web browser
-- 🔄 Real-time updates of split times and comparisons
-- 📊 See current splits, completed splits, and upcoming splits
-- 🎮 Perfect companion for single-monitor speedrunning setups
-- 🌐 Works with LiveSplit's built-in server component
+* 📱 View your LiveSplit timer on any device with a web browser
+* 🔄 Real‑time updates of split times and comparisons
+* 📊 See current and completed splits at a glance
+* 🎮 Perfect companion for single‑monitor or couch‑stream setups
+* 🌐 No external dependencies — just HTML, CSS, and vanilla JS
 
-## 🚀 Getting Started
+---
 
-### For Speedrunners
+## 🚀 Quick Start (choose one)
 
-1. Open LiveSplit on your PC
-2. Right-click → Control → Start Server
-3. Find your PC's IP address (`ipconfig` in Command Prompt)
-4. Visit [this viewer's page](https://randomtick.github.io/livesplit-viewer/)
-5. Enter your IP and port (default: `192.168.1.100:16835`)
-6. Click Connect and enjoy!
+### Option A – "Double‑click & go" *(PC‑only)*
 
-## 💻 Technical Details
+1. **Download** the latest `livesplit‑viewer.zip` from [Releases](https://github.com/RandomTick/livesplit-viewer/releases).
+2. **Extract** the zip and **double‑click `index.html`**.
+3. In LiveSplit **Right‑click → Control → Start Server** (default port **16834**).
+4. Leave the viewer's address box at **`localhost:16834`** (or type your own LAN IP).
 
-- Uses WebSocket connection to LiveSplit's server component
-- Compatible with all LiveSplit layouts and configurations
-- Mobile-friendly responsive design
-- Lightweight (single HTML file, no dependencies)
+> This works because a file opened via `file://` is considered an *insecure* context, so the browser allows a plain WebSocket (`ws://…`).
 
-## ⚠️ Troubleshooting
+---
 
-**Can't connect?**
-- Make sure your device is on the same network as the LiveSplit PC
-- Check that the server is running in LiveSplit
-- Verify the IP address and port are correct
-- If using HTTPS, you may need to allow mixed content in your browser
+### Option B – "Serve over your LAN" *(PC + phone/tablet)*
+
+If you want to read the timer on a second screen:
+
+1. **Install Python 3** (if you don't have it). It comes pre‑installed on macOS/Linux; Windows users can grab it from [https://python.org](https://python.org).
+2. **Clone or download** this repository.
+3. In a terminal **`cd` into the folder** that contains `index.html` and run:
+
+   ```bash
+   python -m http.server 8080 --bind 0.0.0.0
+   ```
+
+   This starts a tiny static server reachable on your LAN at **`http://<your‑PC‑name>:8080`**.
+4. *(Windows only)* Allow port 8080 through the firewall the first time:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "LiveSplit Viewer HTTP" `
+     -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+   ```
+5. **On your phone/tablet** open a browser to **`http://<your‑PC‑name>:8080`**.
+6. Type in the ip **`<your‑PC‑name>:<port>`** — tap **Connect** and enjoy!
+
+> Because the page itself is served over plain HTTP, browsers are happy to open a `ws://` connection to your LiveSplit Server without extra TLS setup.
+
+---
+
+## ⚙️ Technical Notes
+
+| Item             | Details                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| LiveSplit port   | WebSocket server listens on **16834** (`Right‑click → Control → Start Server`).    |
+| Web technologies | Vanilla JS, `requestAnimationFrame` interpolation for smooth timer, no frameworks. |
+| Security         | Runs entirely on your machine/LAN. No data is sent to any third‑party server.      |
+| File size        | ≈30 kB total (HTML + CSS + JS).                                                    |
+
+---
+
+## ❓ Troubleshooting
+
+| Symptom                         | Fix                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **"Disconnected" instantly**    | LiveSplit Server not running, wrong IP, or firewall blocking port 16834.                                                             |
+| **Mixed‑content error**         | You're loading the page over **HTTPS** but using **`ws://…`**. Use HTTP/`file://` *or* change to `wss://` with your own TLS wrapper. |
+| **Site not reachable on phone** | Make sure PC and phone are on the same Wi‑Fi, and open port 8080 in Windows Firewall.                                                |
+
+---
 
 ## 💖 Credits
 
 Created with love for the speedrunning community.
 
-Feel free to fork, modify, and improve!
-
----
-
-*Note: This is not an official LiveSplit project. LiveSplit is developed by [CryZe](https://github.com/CryZe) and the LiveSplit team.*
+*Note: This is not an official LiveSplit project. LiveSplit is developed by [CryZe](https://github.com/CryZe) and the LiveSplit team.*
